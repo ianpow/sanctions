@@ -81,7 +81,7 @@ export default function GlobePage() {
     })
 
     viewer.scene.globe.enableLighting = false
-    viewer.scene.skyAtmosphere.show = true
+    if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true
     viewer.scene.fog.enabled = false
 
     // Start with a nice view

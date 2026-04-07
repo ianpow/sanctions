@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 export interface SanctionEntity {
   id: string
@@ -124,7 +124,7 @@ export function useSanctionsSearch() {
   const [total, setTotal] = useState(0)
   const [loadProgress, setLoadProgress] = useState('')
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>()
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   /** Load bulk datasets. Called once when user first opens globe. */
   const loadData = useCallback(async () => {
