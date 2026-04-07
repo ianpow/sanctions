@@ -45,7 +45,6 @@ export default function GlobePage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<Viewer | null>(null)
   const geoDataSourceRef = useRef<GeoJsonDataSource | null>(null)
-  const labelDataSourceRef = useRef<GeoJsonDataSource | null>(null)
 
   const [filterBody, setFilterBody] = useState<FilterBody>('ALL')
   const [filterType, setFilterType] = useState<FilterType>('ALL')
@@ -166,7 +165,6 @@ export default function GlobePage() {
       // Colour each entity based on its sanction type
       const entities = dataSource.entities.values
       for (const entity of entities) {
-        const numId = (entity as any).properties?.id?.getValue?.() || (entity as any)._id
         // Try to find a matching sanctioned country
         let sanctionData: SanctionedCountry | undefined
 
