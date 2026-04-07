@@ -12,7 +12,10 @@ import {
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
   defined,
+  GeoJsonDataSource,
 } from 'cesium'
+import * as topojson from 'topojson-client'
+import type { Topology } from 'topojson-specification'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import {
   sanctionedCountries,
@@ -21,21 +24,34 @@ import {
   typeLabels,
   type SanctionedCountry,
 } from '../lib/sanctionsData'
+import { numericToIso2 } from '../lib/countryNumericToIso2'
 import { useSanctionsSearch } from '../hooks/useSanctionsSearch'
 
 Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN || ''
 
+const TOPO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+
 type FilterBody = 'ALL' | 'UK' | 'US' | 'EU' | 'UN'
 type FilterType = 'ALL' | 'comprehensive' | 'sectoral' | 'targeted'
+
+/** Build a lookup from ISO2 → SanctionedCountry */
+function buildSanctionLookup(countries: SanctionedCountry[]): Map<string, SanctionedCountry> {
+  const map = new Map<string, SanctionedCountry>()
+  for (const c of countries) map.set(c.iso2, c)
+  return map
+}
 
 export default function GlobePage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<Viewer | null>(null)
+  const geoDataSourceRef = useRef<GeoJsonDataSource | null>(null)
+  const labelDataSourceRef = useRef<GeoJsonDataSource | null>(null)
 
   const [filterBody, setFilterBody] = useState<FilterBody>('ALL')
   const [filterType, setFilterType] = useState<FilterType>('ALL')
   const [selected, setSelected] = useState<SanctionedCountry | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [geoLoaded, setGeoLoaded] = useState(false)
 
   const {
     results, loading, error, total, search, clear,
@@ -61,6 +77,7 @@ export default function GlobePage() {
     if (filterType !== 'ALL' && c.type !== filterType) return false
     return true
   })
+  const filteredLookup = buildSanctionLookup(filtered)
 
   // Init Cesium viewer
   useEffect(() => {
@@ -92,36 +109,103 @@ export default function GlobePage() {
 
     viewerRef.current = viewer
 
+    // Load TopoJSON country boundaries
+    fetch(TOPO_URL)
+      .then((res) => res.json())
+      .then((topo: Topology) => {
+        const geojson = topojson.feature(topo, topo.objects.countries) as any
+        // Store the full GeoJSON for later filtering
+        ;(viewer as any).__countryGeoJson = geojson
+        setGeoLoaded(true)
+      })
+      .catch((err) => console.warn('Failed to load country boundaries:', err))
+
     return () => {
       viewer.destroy()
       viewerRef.current = null
     }
   }, [])
 
-  // Add country entities
+  // Update country polygons when filters change or geo loads
   useEffect(() => {
     const viewer = viewerRef.current
-    if (!viewer) return
+    if (!viewer || !geoLoaded) return
 
-    // Remove previous entities
+    const geojson = (viewer as any).__countryGeoJson
+    if (!geojson) return
+
+    // Remove previous data sources
+    if (geoDataSourceRef.current) {
+      viewer.dataSources.remove(geoDataSourceRef.current, true)
+      geoDataSourceRef.current = null
+    }
+
+    // Build a filtered GeoJSON containing only sanctioned countries
+    const sanctionedFeatures = geojson.features.filter((f: any) => {
+      const numId = f.id || f.properties?.id
+      const iso2 = numericToIso2[String(numId).padStart(3, '0')]
+      return iso2 && filteredLookup.has(iso2)
+    })
+
+    if (sanctionedFeatures.length === 0) return
+
+    const filteredGeoJson = {
+      type: 'FeatureCollection',
+      features: sanctionedFeatures,
+    }
+
+    GeoJsonDataSource.load(filteredGeoJson, {
+      stroke: Color.WHITE.withAlpha(0.6),
+      strokeWidth: 1.5,
+      fill: Color.WHITE.withAlpha(0.3), // placeholder, we'll override per-entity
+      clampToGround: true,
+    }).then((dataSource) => {
+      viewer.dataSources.add(dataSource)
+      geoDataSourceRef.current = dataSource
+
+      // Colour each entity based on its sanction type
+      const entities = dataSource.entities.values
+      for (const entity of entities) {
+        const numId = (entity as any).properties?.id?.getValue?.() || (entity as any)._id
+        // Try to find a matching sanctioned country
+        let sanctionData: SanctionedCountry | undefined
+
+        // Search by checking all features for a match
+        for (const feat of sanctionedFeatures) {
+          const featId = feat.id || feat.properties?.id
+          const iso2 = numericToIso2[String(featId).padStart(3, '0')]
+          if (iso2 && filteredLookup.has(iso2)) {
+            // Match entity name from geojson to link them
+            const entityName = entity.name
+            const featName = feat.properties?.name
+            if (entityName === featName || entityName === String(featId)) {
+              sanctionData = filteredLookup.get(iso2)
+              // Attach sanction data to entity for click handling
+              if (entity.properties) {
+                ;(entity.properties as any).addProperty('sanctionData', sanctionData)
+                ;(entity.properties as any).addProperty('iso2', iso2)
+              }
+              break
+            }
+          }
+        }
+
+        if (sanctionData) {
+          const color = Color.fromCssColorString(typeColors[sanctionData.type])
+          if (entity.polygon) {
+            entity.polygon.material = color.withAlpha(0.35) as any
+            entity.polygon.outlineColor = color.withAlpha(0.8) as any
+            entity.polygon.outline = true as any
+          }
+        }
+      }
+    })
+
+    // Also add label entities at country centroids
     viewer.entities.removeAll()
-
     for (const country of filtered) {
-      const color = typeColors[country.type]
-      const cesiumColor = Color.fromCssColorString(color)
-
-      // Point marker
       viewer.entities.add({
         position: Cartesian3.fromDegrees(country.lon, country.lat),
-        point: {
-          pixelSize: country.type === 'comprehensive' ? 14 : country.type === 'sectoral' ? 11 : 9,
-          color: cesiumColor.withAlpha(0.9),
-          outlineColor: cesiumColor.withAlpha(0.4),
-          outlineWidth: country.type === 'comprehensive' ? 8 : 5,
-          heightReference: HeightReference.CLAMP_TO_GROUND,
-          scaleByDistance: new NearFarScalar(5e6, 1.2, 30e6, 0.6),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
         label: {
           text: country.name,
           font: '13px Inter, sans-serif',
@@ -129,40 +213,28 @@ export default function GlobePage() {
           fillColor: Color.WHITE,
           outlineColor: Color.fromCssColorString('#1a1f2e'),
           outlineWidth: 3,
-          verticalOrigin: VerticalOrigin.BOTTOM,
+          verticalOrigin: VerticalOrigin.CENTER,
           horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian3(0, -14, 0) as any,
           scaleByDistance: new NearFarScalar(3e6, 1, 20e6, 0.5),
           translucencyByDistance: new NearFarScalar(1e6, 1, 30e6, 0.6),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           heightReference: HeightReference.CLAMP_TO_GROUND,
         },
+        point: {
+          pixelSize: 6,
+          color: Color.WHITE.withAlpha(0.9),
+          outlineColor: Color.fromCssColorString(typeColors[country.type]).withAlpha(0.6),
+          outlineWidth: 3,
+          heightReference: HeightReference.CLAMP_TO_GROUND,
+          scaleByDistance: new NearFarScalar(3e6, 1, 20e6, 0.5),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
         properties: {
           sanctionData: country,
         } as any,
       })
-
-      // Sanction body indicator dots (small dots around the main point)
-      const bodyList = country.sanctions
-      const dotRadius = 0.6
-      bodyList.forEach((body, i) => {
-        const angle = ((2 * Math.PI) / bodyList.length) * i - Math.PI / 2
-        const offsetLon = country.lon + dotRadius * Math.cos(angle)
-        const offsetLat = country.lat + dotRadius * Math.sin(angle)
-        viewer.entities.add({
-          position: Cartesian3.fromDegrees(offsetLon, offsetLat),
-          point: {
-            pixelSize: 5,
-            color: Color.fromCssColorString(bodyColors[body]),
-            heightReference: HeightReference.CLAMP_TO_GROUND,
-            scaleByDistance: new NearFarScalar(3e6, 1, 15e6, 0.4),
-            translucencyByDistance: new NearFarScalar(3e6, 1, 20e6, 0),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-        })
-      })
     }
-  }, [filtered])
+  }, [filtered, geoLoaded])
 
   // Click handler for country selection
   useEffect(() => {
@@ -172,19 +244,35 @@ export default function GlobePage() {
     const handler = new ScreenSpaceEventHandler(viewer.scene.canvas)
     handler.setInputAction((click: any) => {
       const picked = viewer.scene.pick(click.position)
-      if (defined(picked) && picked.id?.properties?.sanctionData) {
-        const data = picked.id.properties.sanctionData.getValue(
-          viewer.clock.currentTime
-        ) as SanctionedCountry
-        setSelected(data)
-        // Fly to country
-        viewer.camera.flyTo({
-          destination: Cartesian3.fromDegrees(data.lon, data.lat, 5_000_000),
-          duration: 1.5,
-        })
-      } else {
-        setSelected(null)
+      if (defined(picked) && picked.id) {
+        const entity = picked.id
+        // Check label entities first (they have sanctionData directly)
+        if (entity.properties?.sanctionData) {
+          const data = entity.properties.sanctionData.getValue(
+            viewer.clock.currentTime
+          ) as SanctionedCountry
+          setSelected(data)
+          viewer.camera.flyTo({
+            destination: Cartesian3.fromDegrees(data.lon, data.lat, 5_000_000),
+            duration: 1.5,
+          })
+          return
+        }
+        // Check polygon entities (sanctionData added via addProperty)
+        if (entity.properties?.iso2) {
+          const iso2 = entity.properties.iso2.getValue(viewer.clock.currentTime)
+          const sanctionCountry = sanctionedCountries.find((c) => c.iso2 === iso2)
+          if (sanctionCountry) {
+            setSelected(sanctionCountry)
+            viewer.camera.flyTo({
+              destination: Cartesian3.fromDegrees(sanctionCountry.lon, sanctionCountry.lat, 5_000_000),
+              duration: 1.5,
+            })
+            return
+          }
+        }
       }
+      setSelected(null)
     }, ScreenSpaceEventType.LEFT_CLICK)
 
     return () => handler.destroy()
