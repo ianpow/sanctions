@@ -154,9 +154,9 @@ export default function GlobePage() {
     }
 
     GeoJsonDataSource.load(filteredGeoJson, {
-      stroke: Color.WHITE.withAlpha(0.6),
-      strokeWidth: 1.5,
-      fill: Color.WHITE.withAlpha(0.3), // placeholder, we'll override per-entity
+      stroke: Color.WHITE.withAlpha(0.9),
+      strokeWidth: 2,
+      fill: Color.WHITE.withAlpha(0.5), // placeholder, we'll override per-entity
       clampToGround: true,
     }).then((dataSource) => {
       viewer.dataSources.add(dataSource)
@@ -191,8 +191,8 @@ export default function GlobePage() {
         if (sanctionData) {
           const color = Color.fromCssColorString(typeColors[sanctionData.type])
           if (entity.polygon) {
-            entity.polygon.material = color.withAlpha(0.35) as any
-            entity.polygon.outlineColor = color.withAlpha(0.8) as any
+            entity.polygon.material = color.withAlpha(0.55) as any
+            entity.polygon.outlineColor = Color.WHITE.withAlpha(0.9) as any
             entity.polygon.outline = true as any
           }
         }
@@ -206,15 +206,15 @@ export default function GlobePage() {
         position: Cartesian3.fromDegrees(country.lon, country.lat),
         label: {
           text: country.name,
-          font: '13px Inter, sans-serif',
+          font: 'bold 15px Inter, sans-serif',
           style: LabelStyle.FILL_AND_OUTLINE,
           fillColor: Color.WHITE,
-          outlineColor: Color.fromCssColorString('#1a1f2e'),
-          outlineWidth: 3,
+          outlineColor: Color.BLACK,
+          outlineWidth: 5,
           verticalOrigin: VerticalOrigin.CENTER,
           horizontalOrigin: HorizontalOrigin.CENTER,
-          scaleByDistance: new NearFarScalar(3e6, 1, 20e6, 0.5),
-          translucencyByDistance: new NearFarScalar(1e6, 1, 30e6, 0.6),
+          scaleByDistance: new NearFarScalar(3e6, 1.1, 20e6, 0.55),
+          translucencyByDistance: new NearFarScalar(1e6, 1, 30e6, 0.7),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           heightReference: HeightReference.CLAMP_TO_GROUND,
         },

@@ -258,11 +258,11 @@ export const bodyColors: Record<string, string> = {
   UN: '#7b6fa0',
 }
 
-/** Colour by sanction type */
+/** Colour by sanction type — high contrast against earth terrain */
 export const typeColors: Record<string, string> = {
-  comprehensive: '#b5727e',
-  sectoral: '#c4956a',
-  targeted: '#5ba39e',
+  comprehensive: '#e63946',  // strong red — unmissable
+  sectoral: '#ff8c00',       // vivid orange
+  targeted: '#d4a017',       // gold/amber — stands out against green
 }
 
 /** Label by sanction type */
