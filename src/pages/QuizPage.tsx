@@ -331,7 +331,6 @@ export default function QuizPage() {
   const current = questions[currentIdx]
   const isCorrect = selectedOption === current?.correctIndex
   const score = answers.filter((a, i) => a === questions[i].correctIndex).length
-  const answered = answers.filter((a) => a !== null).length
 
   const handleSelect = useCallback(
     (optionIdx: number) => {
