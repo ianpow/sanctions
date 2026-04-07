@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import LearnPage from './pages/LearnPage'
 import GlobePage from './pages/GlobePage'
+import QuizPage from './pages/QuizPage'
 
 function Nav() {
   return (
@@ -13,6 +14,9 @@ function Nav() {
         <div className="nav-links">
           <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             Learn
+          </NavLink>
+          <NavLink to="/quiz" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+            Quiz
           </NavLink>
           <NavLink to="/globe" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             Globe
@@ -29,6 +33,7 @@ export default function App() {
       <Nav />
       <Routes>
         <Route path="/" element={<LearnPage />} />
+        <Route path="/quiz" element={<QuizPage />} />
         <Route path="/globe" element={<GlobePage />} />
       </Routes>
     </div>
